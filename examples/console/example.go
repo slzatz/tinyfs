@@ -1,3 +1,4 @@
+//go:build tinygo
 // +build tinygo
 
 package console
@@ -34,20 +35,22 @@ var (
 	currdir = "/"
 
 	commands = map[string]cmdfunc{
-		"":        noop,
-		"dbg":     dbg,
-		"lsblk":   lsblk,
-		"mount":   mount,
-		"umount":  umount,
-		"format":  format,
-		"xxd":     xxd,
-		"ls":      ls,
-		"samples": samples,
-		"mkdir":   mkdir,
-		"cat":     cat,
-		"create":  create,
-		"write":   write,
-		"rm":      rm,
+		"":           noop,
+		"dbg":        dbg,
+		"lsblk":      lsblk,
+		"mount":      mount,
+		"umount":     umount,
+		"format":     format,
+		"xxd":        xxd,
+		"ls":         ls,
+		"samples":    samples,
+		"mkdir":      mkdir,
+		"cat":        cat,
+		"create":     create,
+		"write":      write,
+		"writefile":  writefile,
+		"writefile2": writefile2,
+		"rm":         rm,
 	}
 )
 
@@ -109,13 +112,20 @@ func RunFor(dev *flash.Device, filesys tinyfs.Filesystem) {
 						console.Write([]byte{0x8, 0x20, 0x8})
 					}
 				case 13:
-					// return key
-					if console.Buffered() > 0 {
-						data, _ := console.ReadByte()
-						if data != 10 {
-							println("\r\nunexpected: \r", int(data))
+					/*
+						// return key
+						//time.Sleep(time.Second) // hypothesis is the below was sometimes too fast
+						for {
+							if console.Buffered() > 0 {
+								data, _ := console.ReadByte()
+								if data != 10 {
+									println("\r\nunexpected: \r", int(data))
+								}
+								break
+							}
 						}
-					}
+						console.Write([]byte("\r\n"))
+					*/
 					console.Write([]byte("\r\n"))
 					runCommand(string(input[:i]))
 					prompt()
@@ -157,6 +167,16 @@ func runCommand(line string) {
 	if !ok {
 		println("unknown command: " + line)
 		return
+	}
+	if cmd == "writefile" || cmd == "writefile2" {
+		if len(argv) != 3 {
+			println("error\r\n")
+			//console.Write([]byte("error\r\n"))
+			return
+		} else {
+			println("ok\r\n")
+			//console.Write([]byte("ok\r\n"))
+		}
 	}
 	cmdfn(argv)
 }
@@ -375,6 +395,8 @@ func write(argv []string) {
 				// anything else, just echo the character if it is printable
 				if strconv.IsPrint(rune(data)) {
 					console.WriteByte(data)
+				} else {
+					console.WriteByte(byte(46))
 				}
 				buf[0] = data
 				if _, err := f.Write(buf); err != nil {
@@ -387,6 +409,73 @@ func write(argv []string) {
 	}
 }
 
+func writefile(argv []string) {
+	tgt := ""
+	tgt = strings.TrimSpace(argv[1])
+	ln, _ := strconv.Atoi(strings.TrimSpace(argv[2]))
+	buf := make([]byte, 1)
+	f, err := fs.OpenFile(tgt, os.O_CREATE|os.O_WRONLY|os.O_TRUNC)
+	if err != nil {
+		fmt.Printf("error opening %s: %s\r\n", tgt, err.Error())
+		return
+	}
+	defer f.Close()
+	var n int
+	for {
+		if console.Buffered() > 0 {
+			data, err := console.ReadByte()
+			if err != nil {
+				//console.WriteByte(byte(63))
+				continue
+			}
+			//console.WriteByte(data)
+			buf[0] = data
+			if _, err := f.Write(buf); err != nil {
+				fmt.Printf("\nerror writing: %s\r\n", err)
+				return
+			}
+			n++
+			if n == ln {
+				break
+			}
+		}
+	}
+	fmt.Printf("\r\nwrote %d bytes to %s\r\n", n, tgt)
+}
+
+func writefile2(argv []string) {
+	tgt := ""
+	tgt = strings.TrimSpace(argv[1])
+	ln, _ := strconv.Atoi(strings.TrimSpace(argv[2]))
+	buf := make([]byte, ln)
+	f, err := fs.OpenFile(tgt, os.O_CREATE|os.O_WRONLY|os.O_TRUNC)
+	if err != nil {
+		fmt.Printf("error opening %s: %s\r\n", tgt, err.Error())
+		return
+	}
+	defer f.Close()
+	var n int
+	for {
+		if console.Buffered() > 0 {
+			data, err := console.ReadByte()
+			if err != nil {
+				//console.WriteByte(byte(63))
+				continue
+			}
+			//console.WriteByte(data)
+			buf[n] = data
+			n++
+			if n == ln {
+				break
+			}
+		}
+	}
+	if _, err := f.Write(buf); err != nil {
+		fmt.Printf("\nerror writing: %s\r\n", err)
+		return
+	}
+	fmt.Printf("\r\nwrote %d bytes to %s\r\n", n, tgt)
+}
 func createSampleFile(name string, buf []byte) (int, error) {
 	for j := uint8(0); j < uint8(len(buf)); j++ {
 		buf[j] = 0x20 + j
