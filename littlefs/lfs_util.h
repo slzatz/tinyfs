@@ -1,11 +1,16 @@
 /*
  * lfs utility functions
  *
+ * Copyright (c) 2022, The littlefs authors.
  * Copyright (c) 2017, Arm Limited. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  */
 #ifndef LFS_UTIL_H
 #define LFS_UTIL_H
+#define LFS_NO_DEBUG
+#define LFS_NO_WARN
+#define LFS_NO_ERROR
+#define LFS_NO_ASSERT
 
 // Users can override lfs_util.h with their own configuration by defining
 // LFS_CONFIG as a header file to include (-DLFS_CONFIG=lfs_config.h).
@@ -28,12 +33,12 @@
 #ifndef LFS_NO_MALLOC
 #include <stdlib.h>
 #endif
-#ifdef LFS_YES_ASSERT
+#ifndef LFS_NO_ASSERT
 #include <assert.h>
 #endif
-#if defined(LFS_YES_DEBUG) || \
-        defined(LFS_YES_WARN) || \
-        defined(LFS_YES_ERROR) || \
+#if !defined(LFS_NO_DEBUG) || \
+        !defined(LFS_NO_WARN) || \
+        !defined(LFS_NO_ERROR) || \
         defined(LFS_YES_TRACE)
 #include <stdio.h>
 #endif
@@ -49,39 +54,53 @@ extern "C"
 // code footprint
 
 // Logging functions
+#ifndef LFS_TRACE
 #ifdef LFS_YES_TRACE
-#define LFS_TRACE(fmt, ...) \
-    printf("lfs_trace:%d: " fmt "\n", __LINE__, __VA_ARGS__)
+#define LFS_TRACE_(fmt, ...) \
+    printf("%s:%d:trace: " fmt "%s\n", __FILE__, __LINE__, __VA_ARGS__)
+#define LFS_TRACE(...) LFS_TRACE_(__VA_ARGS__, "")
 #else
-#define LFS_TRACE(fmt, ...)
+#define LFS_TRACE(...)
+#endif
 #endif
 
-#ifdef LFS_YES_DEBUG
-#define LFS_DEBUG(fmt, ...) \
-    printf("lfs_debug:%d: " fmt "\n", __LINE__, __VA_ARGS__)
+#ifndef LFS_DEBUG
+#ifndef LFS_NO_DEBUG
+#define LFS_DEBUG_(fmt, ...) \
+    //printf("%s:%d:debug: " fmt "%s\n", __FILE__, __LINE__, __VA_ARGS__)
+#define LFS_DEBUG(...) LFS_DEBUG_(__VA_ARGS__, "")
 #else
-#define LFS_DEBUG(fmt, ...)
+#define LFS_DEBUG(...)
+#endif
 #endif
 
-#ifdef LFS_YES_WARN
-#define LFS_WARN(fmt, ...) \
-    printf("lfs_warn:%d: " fmt "\n", __LINE__, __VA_ARGS__)
+#ifndef LFS_WARN
+#ifndef LFS_NO_WARN
+#define LFS_WARN_(fmt, ...) \
+    printf("%s:%d:warn: " fmt "%s\n", __FILE__, __LINE__, __VA_ARGS__)
+#define LFS_WARN(...) LFS_WARN_(__VA_ARGS__, "")
 #else
-#define LFS_WARN(fmt, ...)
+#define LFS_WARN(...)
+#endif
 #endif
 
-#ifdef LFS_YES_ERROR
-#define LFS_ERROR(fmt, ...) \
-    printf("lfs_error:%d: " fmt "\n", __LINE__, __VA_ARGS__)
+#ifndef LFS_ERROR
+#ifndef LFS_NO_ERROR
+#define LFS_ERROR_(fmt, ...) \
+    printf("%s:%d:error: " fmt "%s\n", __FILE__, __LINE__, __VA_ARGS__)
+#define LFS_ERROR(...) LFS_ERROR_(__VA_ARGS__, "")
 #else
-#define LFS_ERROR(fmt, ...)
+#define LFS_ERROR(...)
+#endif
 #endif
 
 // Runtime assertions
-#ifdef LFS_YES_ASSERT
+#ifndef LFS_ASSERT
+#ifndef LFS_NO_ASSERT
 #define LFS_ASSERT(test) assert(test)
 #else
 #define LFS_ASSERT(test)
+#endif
 #endif
 
 
@@ -107,7 +126,7 @@ static inline uint32_t lfs_alignup(uint32_t a, uint32_t alignment) {
     return lfs_aligndown(a + alignment-1, alignment);
 }
 
-// Find the next smallest power of 2 less than or equal to a
+// Find the smallest power of 2 greater than or equal to a
 static inline uint32_t lfs_npw2(uint32_t a) {
 #if !defined(LFS_NO_INTRINSICS) && (defined(__GNUC__) || defined(__CC_ARM))
     return 32 - __builtin_clz(a-1);

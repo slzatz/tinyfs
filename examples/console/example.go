@@ -16,10 +16,10 @@ import (
 	"tinygo.org/x/tinyfs"
 )
 
-const consoleBufLen = 64
+const consoleBufLen = 64 //256 //64
 
-const startBlock = 0
-const blockCount = 0
+//const startBlock = 0
+//const blockCount = 0
 
 var (
 	debug = false
@@ -36,6 +36,7 @@ var (
 
 	commands = map[string]cmdfunc{
 		"":           noop,
+		"attrs":      attributes,
 		"dbg":        dbg,
 		"lsblk":      lsblk,
 		"mount":      mount,
@@ -162,7 +163,7 @@ func RunFor(dev *flash.Device, filesys tinyfs.Filesystem) {
 
 func runCommand(line string) {
 	argv := strings.SplitN(strings.TrimSpace(line), " ", -1)
-	cmd := argv[0]
+	cmd := strings.TrimSpace(argv[0])
 	cmdfn, ok := commands[cmd]
 	if !ok {
 		println("unknown command: " + line)
@@ -207,6 +208,8 @@ func lsblk(argv []string) {
 			" Status 1: %02x\r\n"+
 			" Status 2: %02x\r\n"+
 			" \r\n"+
+			" Total size: %d\r\n"+
+			" Quad enable bitmask: %x\r\n"+
 			" Max clock speed (MHz): %d\r\n"+
 			" Has Sector Protection: %t\r\n"+
 			" Supports Fast Reads:   %t\r\n"+
@@ -214,11 +217,15 @@ func lsblk(argv []string) {
 			" Supports QSPI Write:   %t\r\n"+
 			" Write Status Split:    %t\r\n"+
 			" Single Status Byte:    %t\r\n"+
+			" Write Block Size:    %d\r\n"+
+			" Erase Block Size:    %d\r\n"+
 			"-------------------------------------\r\n\r\n",
 		attrs.JedecID.Uint32(),
 		serialNumber1,
 		status1,
 		status2,
+		attrs.TotalSize,
+		attrs.QuadEnableBitMask,
 		attrs.MaxClockSpeedMHz,
 		attrs.HasSectorProtection,
 		attrs.SupportsFastRead,
@@ -226,7 +233,13 @@ func lsblk(argv []string) {
 		attrs.SupportsQSPIWrites,
 		attrs.WriteStatusSplit,
 		attrs.SingleStatusByte,
+		flashdev.WriteBlockSize(),
+		flashdev.EraseBlockSize(),
 	)
+}
+
+func attributes(argv []string) {
+	fmt.Printf("%v\n", flashdev.Attrs())
 }
 
 func mount(argv []string) {
@@ -447,7 +460,8 @@ func writefile2(argv []string) {
 	tgt := ""
 	tgt = strings.TrimSpace(argv[1])
 	ln, _ := strconv.Atoi(strings.TrimSpace(argv[2]))
-	buf := make([]byte, ln)
+	//buf := make([]byte, ln)
+	tempBuf := make([]byte, 100)
 	f, err := fs.OpenFile(tgt, os.O_CREATE|os.O_WRONLY|os.O_TRUNC)
 	if err != nil {
 		fmt.Printf("error opening %s: %s\r\n", tgt, err.Error())
@@ -457,25 +471,69 @@ func writefile2(argv []string) {
 	var n int
 	for {
 		if console.Buffered() > 0 {
-			data, err := console.ReadByte()
+			//data, err := console.ReadByte()
+			k, err := console.Read(tempBuf)
 			if err != nil {
-				//console.WriteByte(byte(63))
 				continue
 			}
+			if err := flashdev.WaitUntilReady(); err != nil {
+				fmt.Printf("\nerror WaitUntilReady: %s\r\n", err)
+				return
+			}
+			if _, err := f.Write(tempBuf[:k]); err != nil {
+				fmt.Printf("\nerror writing: %s\r\n", err)
+				return
+			}
 			//console.WriteByte(data)
-			buf[n] = data
-			n++
-			if n == ln {
+			//buf = append(buf, tempBuf...)
+			//buf[n] = data
+			//n++
+			n += k
+			fmt.Printf("%d\r\n", k)
+			fmt.Printf("%d\r\n", n)
+			//if n == ln {
+			if n >= ln {
 				break
 			}
 		}
 	}
-	if _, err := f.Write(buf); err != nil {
-		fmt.Printf("\nerror writing: %s\r\n", err)
+	/*
+		if _, err := f.Write(buf[:7400]); err != nil {
+			fmt.Printf("\nerror writing: %s\r\n", err)
+			return
+		}
+		time.Sleep(2 * time.Second)
+		if _, err := f.Write(buf[7400:]); err != nil {
+	*/
+	if err := flashdev.WaitUntilReady(); err != nil {
+		fmt.Printf("\nerror WaitUntilReady: %s\r\n", err)
 		return
 	}
-	fmt.Printf("\r\nwrote %d bytes to %s\r\n", n, tgt)
+	/*
+			f, err := fs.OpenFile(tgt, os.O_CREATE|os.O_WRONLY|os.O_TRUNC)
+			if err != nil {
+				fmt.Printf("error opening %s: %s\r\n", tgt, err.Error())
+				return
+			}
+			defer f.Close()
+		if err := flashdev.WaitUntilReady(); err != nil {
+			fmt.Printf("\nerror WaitUntilReady: %s\r\n", err)
+			return
+		}
+	*/
+	/*
+		if _, err := f.Write(buf); err != nil {
+			fmt.Printf("\nerror writing: %s\r\n", err)
+			return
+		}
+		if err := flashdev.WaitUntilReady(); err != nil {
+			fmt.Printf("\nerror WaitUntilReady: %s\r\n", err)
+			return
+		}
+	*/
+	//fmt.Printf("\r\nwrote %d bytes to %s\r\n", n, tgt)
 }
+
 func createSampleFile(name string, buf []byte) (int, error) {
 	for j := uint8(0); j < uint8(len(buf)); j++ {
 		buf[j] = 0x20 + j
